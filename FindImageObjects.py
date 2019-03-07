@@ -398,7 +398,7 @@ def findBlueAphidsHSV(img):    #img is an [Y_resolution, X_resolution, 3] size n
 # Finds the laser spot using openCV HSV filtering and some post filter algorithm
 def findLaserSpotHSV(img): #Find the end of the 'Laser line' which VREP uses to show laser path
 
-    startTime = time.time() 
+    #startTime = time.time() 
     startFound = False
     #convert to from RGB to HSV
     imHSV = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
@@ -492,7 +492,7 @@ def findLaserSpotHSV(img): #Find the end of the 'Laser line' which VREP uses to 
         else:
             endFound = True
     
-    print('Laser search complete, time = ' + str(time.time()-startTime))
+    #print('Laser search complete, time = ' + str(time.time()-startTime))
     return np.array([pixX, pixY])
 
 ##############################################################################
@@ -502,7 +502,7 @@ def findLaserSpotHSV(img): #Find the end of the 'Laser line' which VREP uses to 
 # Does not need the "checkNeighb" function as a result (should improve speed)
 def findBlueAphidsCont(img, aphidList):    
 
-    ScanStart = time.time() # start timer
+    #ScanStart = time.time() # start timer
     # Convert image to HSV and filter to find aphids
     imHSV = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)   # !! Could do have this as function input instead
     # Set HSV filter values
@@ -517,11 +517,15 @@ def findBlueAphidsCont(img, aphidList):
     # check if centroid falls within estimated rectangle of existing aphid
     for cnt in contours:
 
-        _,_,width,height = cv2.boundingRect(cnt) # get width and height
+        x,y,width,height = cv2.boundingRect(cnt) # get width and height
         M = cv2.moments(cnt)    
-        cx = int(M['m10']/M['m00']) #center x pixel
-        cy = int(M['m01']/M['m00']) #center y pixel
-
+        #Can't divide by zero so check this first, then get centroid location
+        if M['m00'] != 0:
+            cx = int(M['m10']/M['m00']) #center x pixel
+            cy = int(M['m01']/M['m00']) #center y pixel
+        else:
+            cx = math.ceil(x+(width/2))
+            cy = math.ceil(y + (height/2))
         newTarget = True
         #Check if aphid is within region of existing aphids
         for target in aphidList:
@@ -531,7 +535,7 @@ def findBlueAphidsCont(img, aphidList):
             if (endPts[0] <= cx <= endPts[1]) and (endPts[2] <= cy <= endPts[3]):
                 target.updatePos(cx, cy, width, height)
                 newTarget = False
-                print('Aphid Updated')
+                #print('Aphid Updated')
                 break
 
         # If not in region of existing aphid create new aphid:
@@ -539,10 +543,10 @@ def findBlueAphidsCont(img, aphidList):
             ref = aphidList[-1].ID + 1
             newAphid = aphid(cx, cy, width, height, ref)
             aphidList.append(newAphid)
-            print('New Aphid Found')
+            #print('New Aphid Found')
 
     #print time taken and number of aphids found
-    print('Aphid Pixel scan took ' + str(time.time() - ScanStart) + 'seconds.')
+    #print('Aphid Pixel scan took ' + str(time.time() - ScanStart) + 'seconds.')
     print('Number of Aphids = ' + str(len(aphidList)))
 
     return aphidList
@@ -558,7 +562,8 @@ def findNextTargetIdx(aphidList, laserSpot):
     aphidCount = len(aphidList)
     dist2laser = np.zeros(aphidCount)
 
-    for idx in range(aphidCount):
+    for idx in range(1,aphidCount):
+        dist2laser[0] = 1e4
         if aphidList[idx].active == True:
             dist2laser[idx] = np.sqrt((aphidList[idx].currentX - laserSpot[0])**2 + (aphidList[idx].currentY - laserSpot[1])**2)
         elif aphidList[idx].active == False:

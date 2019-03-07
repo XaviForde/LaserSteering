@@ -42,11 +42,12 @@ error_pixel_tol = 2
 x_err = 15
 y_err = 15
 current_target = 0
+nextTarget = True
 aphidList = []
 aphidList.append(aphid(255,255,0,0,0))
 ## SET GAINS HERE: ##
-K_Pitch = 0.002     #set proportional gain pitch
-K_Yaw = 0.002      #set proportional gain yaw
+K_Pitch = 0.0012     #set proportional gain pitch
+K_Yaw = 0.0012     #set proportional gain yaw
 
 ########     Visual Servoing Code Begins   ##########
 while True:
@@ -59,44 +60,49 @@ while True:
     img = np.array(image, dtype = np.uint8)     #convert V-REP output to numpy format
     img.resize([resolution[0],resolution[1],3]) #Resize image into pixel resolution by 3 deep for RGB
 
-        
+    
     aphids = fio.findBlueAphidsCont(img, aphidList)    #Find Location of the aphids in the image      
     laserSpotPos = fio.findLaserSpotHSV(img)  #Find laser spot location
-    idx = fio.findNextTargetIdx(aphidList, laserSpotPos)    #Get index of next target
-    #Find location of the laser spot in the image
-    #laserSpotPos = fio.findLaserSpotHSV(img)           
+
+    if nextTarget == True:
+        idx = fio.findNextTargetIdx(aphidList, laserSpotPos)    #Get index of next target
+        nextTarget = False
 
     #Calculate X and Y laser spot pixel position errors
     x_err = (laserSpotPos[0] - aphidList[idx].currentX)   #Error in x direction
     y_err = (laserSpotPos[1] - aphidList[idx].currentY)   #Error in y direction    
     
     #set tolerances in the position errors
-    x_tol = aphidList[idx].width + 1
-    y_tol = aphidList[idx].height + 1
+    x_tol = aphidList[idx].width 
+    y_tol = aphidList[idx].height 
 
-    #If error is less than aphid size then move to next target
-    if x_err <= x_tol and y_err <= y_tol:
-        current_target += 1
-        aphidList[idx].targetHit()
-        print(' Targets destroyed = ' + str(current_target) + ' from ' + str(len(aphidList)))
-
+    #Print errors
     print('ErrorX = ' + str(x_err) + ' ErrorY = ' + str(y_err) + ' Allowable = ' + str(x_tol) + ' ' + str(y_tol))
 
-    #Rotate laser as per error 
-    ####print('Current Pitch = ' + str(prevPitchAng) + ' Current Yaw = ' + str(prevYawAng))
+    #If error is less than aphid size then move to next target
+    if abs(x_err) <= 1 and abs(y_err) <= 1 and idx != 0:
+        current_target += 1
+        aphidList[idx].targetHit()
+        nextTarget = True
+        print('Number destroyed ' + str(current_target) + ' from ' + str(len(aphidList)))
 
+    
+
+
+    #Rotate laser proportional to error:
+    
+    #find current pitch angles
+    errCode, prevPitchAng = vrep.simxGetJointPosition(clientID, LaserPitchHandle, vrep.simx_opmode_buffer)
+    errCode, prevYawAng = vrep.simxGetJointPosition(clientID, LaserYawHandle, vrep.simx_opmode_buffer)
+    
     #calculate new joint angles
     demandPitchAng = float(prevPitchAng) - (float(y_err)*K_Pitch)
     demandYawAng = float(prevYawAng) + (float(x_err)*K_Yaw)
-
-    ###print('Demand Pitch = ' + str(demandPitchAng) + ' Demand Yaw = ' + str(demandYawAng))
     
     #set new joint angles
     errorCodePitch2 = vrep.simxSetJointPosition(clientID, LaserPitchHandle, demandPitchAng, vrep.simx_opmode_oneshot)
     errorCodeYaw2 = vrep.simxSetJointPosition(clientID, LaserYawHandle, demandYawAng, vrep.simx_opmode_oneshot)
-    #update pitch angles
-    errCode, prevPitchAng = vrep.simxGetJointPosition(clientID, LaserPitchHandle, vrep.simx_opmode_buffer)
-    errCode, prevYawAng = vrep.simxGetJointPosition(clientID, LaserYawHandle, vrep.simx_opmode_buffer)
+    
 
 
 
@@ -105,9 +111,5 @@ cv2.imshow('image',img)
 cv2.waitKey(0)
 cv2.destroyAllWindows()
 print('Visual Servoing Loop Complete')
-#print('Laser Spot at Pixel (' + str(laserSpotPos[0]) + ',' + str(laserSpotPos[1]) + ')')
-#x_err = (laserSpotPos[0] - aphidPos[0]) #Calculate error in laser spot pixel postion in x direction
-#y_err = (laserSpotPos[1] - aphidPos[1]) #Calculate error in laser spot pixel position in y direction  
-print('ErrorX = ' + str(x_err) + ' ErrorY = ' + str(y_err))
 print('Frames Analysed = ' + str(img_processed))
 vrep.simxFinish(clientID) #close connetion
