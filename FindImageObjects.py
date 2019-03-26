@@ -547,7 +547,6 @@ def findBlueAphidsCont(img, aphidList):
 
     #print time taken and number of aphids found
     #print('Aphid Pixel scan took ' + str(time.time() - ScanStart) + 'seconds.')
-    print('Number of Aphids = ' + str(len(aphidList)))
 
     return aphidList
 
@@ -572,3 +571,40 @@ def findNextTargetIdx(aphidList, laserSpot):
     nxtIdx = np.argmin(dist2laser)
 
     return nxtIdx
+
+
+################################################################
+#  Finds a laser spot in the virtual env where the laser ray
+#  is not visible.
+
+def findLaserSpotNoLine(img, old_position, lower_blue = np.array([0,100,0]), upper_blue = np.array([30,255,255])):    
+
+    #ScanStart = time.time() # start timer
+    isFound = False
+
+    #Convret colorspace to HSV
+    imHSV = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+
+    # Filter image to get mask of aphid pixel locations
+    maskHSV = cv2.inRange(imHSV, lower_blue, upper_blue)
+    # Find contours of potential laser spots
+    _,contours,_ = cv2.findContours(maskHSV, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    
+    # Create empty array of candidate laser spot postions
+    #potLocs = np.array([0,0,0,0])
+    
+    for cnt in contours:
+        #print("cnt found")
+        x, y, width, height = cv2.boundingRect(cnt) # get width and height
+        #area = width*height #calculate bounding rectangle area
+        #AR = height/width   #calculate aspect ratio
+        isFound = True
+            
+
+    if isFound == False:
+        x = old_position[0]
+        y = old_position[1]
+    
+        
+    #print(str(x) + ' ' + str(y))
+    return x, y, isFound
