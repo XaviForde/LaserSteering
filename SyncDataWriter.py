@@ -1,5 +1,6 @@
 import vrep
 import cv2          #openCV module
+import csv
 import numpy as np
 import time
 import sys
@@ -53,8 +54,11 @@ aphidList.append(aphid(255,255,0,0,0))
 #Set initial laser pos
 laserSpotPos = [255, 255]
 ## SET GAINS HERE: ##
-K_Pitch = 0.0006     #set proportional gain pitch
-K_Yaw = 0.0004     #set proportional gain yaw
+K_Pitch = 0.0002     #set proportional gain pitch
+K_Yaw = 0.0002       #set proportional gain yaw
+
+errOUT = [[0,0,0,0,0,0]]
+
 
 ########     Visual Servoing Code Begins   ##########
 while True:
@@ -72,6 +76,7 @@ while True:
     
     #Process image to find aphid and laser spot locations
     aphidList = fio.findBlueAphidsCont(img, aphidList)    #Find Location of the aphids in the image      
+    print('Number of aphids: ' + str(len(aphidList)))
     x, y, isFound = fio.findLaserSpotNoLine(img=img, old_position = laserSpotPos)  #Find laser spot location
     laserSpotPos = [x,y]
     
@@ -83,6 +88,11 @@ while True:
     #Calculate X and Y laser spot pixel position errors
     x_err = (laserSpotPos[0] - aphidList[idx].currentX)   #Error in x direction
     y_err = (laserSpotPos[1] - aphidList[idx].currentY)   #Error in y direction    
+    errOUT.append([x_err, y_err, x, y,aphidList[idx].currentX,aphidList[idx].currentY])
+    with open('kpx000Xkpy000X.csv', 'w') as csvFile:
+        writer = csv.writer(csvFile)
+        writer.writerows(errOUT)
+
     
     #set tolerances in the position errors
     x_tol = aphidList[idx].width 
@@ -102,8 +112,8 @@ while True:
     #Rotate laser proportional to error, but account for velocity of aphid:
 
     #Calculate X and Y laser spot pixel position errors to estimated position in next frame
-    x_err = (laserSpotPos[0] - aphidList[idx].estX)   #Error in x direction
-    y_err = (laserSpotPos[1] - aphidList[idx].estY)   #Error in y direction   
+    #x_err = (laserSpotPos[0] - aphidList[idx].estX)   #Error in x direction
+    #y_err = (laserSpotPos[1] - aphidList[idx].estY)   #Error in y direction   
     
     #find current pitch angles
     errCode, prevPitchAng = vrep.simxGetJointPosition(clientID, LaserPitchHandle, vrep.simx_opmode_buffer)

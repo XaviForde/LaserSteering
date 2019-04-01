@@ -518,14 +518,10 @@ def findBlueAphidsCont(img, aphidList):
     for cnt in contours:
 
         x,y,width,height = cv2.boundingRect(cnt) # get width and height
-        M = cv2.moments(cnt)    
-        #Can't divide by zero so check this first, then get centroid location
-        if M['m00'] != 0:
-            cx = int(M['m10']/M['m00']) #center x pixel
-            cy = int(M['m01']/M['m00']) #center y pixel
-        else:
-            cx = math.ceil(x+(width/2))
-            cy = math.ceil(y + (height/2))
+        cx = math.ceil(x + (width/2))
+        cy = math.ceil(y + (height/2))
+        
+        #Assume it is a new target intitally
         newTarget = True
         #Check if aphid is within region of existing aphids
         for target in aphidList:
@@ -534,8 +530,7 @@ def findBlueAphidsCont(img, aphidList):
             #Check if centroid is within an existing aphids estimated bounding box
             if (endPts[0] <= cx <= endPts[1]) and (endPts[2] <= cy <= endPts[3]):
                 target.updatePos(cx, cy, width, height)
-                newTarget = False
-                #print('Aphid Updated')
+                newTarget = False                
                 break
 
         # If not in region of existing aphid create new aphid:
@@ -543,8 +538,6 @@ def findBlueAphidsCont(img, aphidList):
             ref = aphidList[-1].ID + 1
             newAphid = aphid(cx, cy, width, height, ref)
             aphidList.append(newAphid)
-            #print('New Aphid Found')
-
     #print time taken and number of aphids found
     #print('Aphid Pixel scan took ' + str(time.time() - ScanStart) + 'seconds.')
 
@@ -563,9 +556,9 @@ def findNextTargetIdx(aphidList, laserSpot):
 
     for idx in range(1,aphidCount):
         dist2laser[0] = 1e4
-        if aphidList[idx].active == True:
+        if aphidList[idx].active:
             dist2laser[idx] = np.sqrt((aphidList[idx].currentX - laserSpot[0])**2 + (aphidList[idx].currentY - laserSpot[1])**2)
-        elif aphidList[idx].active == False:
+        else:
             dist2laser[idx] = 1e5
     
     nxtIdx = np.argmin(dist2laser)

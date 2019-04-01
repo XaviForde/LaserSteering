@@ -1,6 +1,7 @@
 import vrep
 import cv2          #openCV module
 import numpy as np
+import csv
 import time
 import sys
 import matplotlib.pyplot as plt
@@ -53,9 +54,14 @@ aphidList.append(aphid(255,255,0,0,0))
 #Set initial laser pos
 laserSpotPos = [255, 255]
 ## SET GAINS HERE: ##
-K_Pitch = 0.0006     #set proportional gain pitch
-K_Yaw = 0.0004     #set proportional gain yaw
-
+Kp_Pitch = 0.0004     #set proportional gain pitch
+Kp_Yaw = 0.0004     #set proportional gain yaw
+Ki_Pitch = 0.0002
+Ki_Yaw = 0.0002
+x_err_cum = 0
+y_err_cum = 0
+timestep = 50e-3
+errOUT = [[0,0,0,0,0,0]]
 ########     Visual Servoing Code Begins   ##########
 while True:
 
@@ -79,11 +85,21 @@ while True:
     if nextTarget == True:
         idx = fio.findNextTargetIdx(aphidList, laserSpotPos)    #Get index of next target
         nextTarget = False
+        
 
-    #Calculate X and Y laser spot pixel position errors
+    #Calculate X and Y laser spot pixel position errors and cumulative errror
     x_err = (laserSpotPos[0] - aphidList[idx].currentX)   #Error in x direction
     y_err = (laserSpotPos[1] - aphidList[idx].currentY)   #Error in y direction    
-    
+    #Integral of the error signals
+    x_err_cum += x_err*timestep
+    y_err_cum += y_err*timestep
+
+    errOUT.append([x_err, y_err, x, y,aphidList[idx].currentX,aphidList[idx].currentY])
+    # with open('Kp0004Ki002.csv', 'w') as csvFile:
+    #     writer = csv.writer(csvFile)
+    #     writer.writerows(errOUT)
+
+
     #set tolerances in the position errors
     x_tol = aphidList[idx].width 
     y_tol = aphidList[idx].height 
@@ -96,22 +112,20 @@ while True:
         current_target += 1
         aphidList[idx].targetHit()
         nextTarget = True
+        x_err_cum = 0
+        y_err_cum = 0
         #print('Number destroyed ' + str(current_target) + ' from ' + str(len(aphidList)))
 
 
     #Rotate laser proportional to error, but account for velocity of aphid:
-
-    #Calculate X and Y laser spot pixel position errors to estimated position in next frame
-    x_err = (laserSpotPos[0] - aphidList[idx].estX)   #Error in x direction
-    y_err = (laserSpotPos[1] - aphidList[idx].estY)   #Error in y direction   
     
     #find current pitch angles
     errCode, prevPitchAng = vrep.simxGetJointPosition(clientID, LaserPitchHandle, vrep.simx_opmode_buffer)
     errCode, prevYawAng = vrep.simxGetJointPosition(clientID, LaserYawHandle, vrep.simx_opmode_buffer)
     
     #calculate new joint angles
-    demandPitchAng = float(prevPitchAng) - (float(y_err)*K_Pitch)
-    demandYawAng = float(prevYawAng) + (float(x_err)*K_Yaw)
+    demandPitchAng = float(prevPitchAng) - (float(y_err)*Kp_Pitch) - (float(y_err_cum)*Ki_Pitch)
+    demandYawAng = float(prevYawAng) + (float(x_err)*Kp_Yaw) + (float(x_err_cum)*Ki_Yaw)
     
     #set new joint angles
 
