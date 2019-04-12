@@ -1,4 +1,5 @@
 import vrep
+import math
 import cv2          #openCV module
 import numpy as np
 import csv
@@ -24,16 +25,16 @@ else:
 vrep.simxSynchronousTrigger(clientID)
 
 # Get Joint Handles and current positions, set joint angles to zero
-errorCodePitch1,LaserPitchHandle = vrep.simxGetObjectHandle(clientID, 'LaserPitch', vrep.simx_opmode_blocking)
-errorCodeYaw1,LaserYawHandle = vrep.simxGetObjectHandle(clientID, 'LaserYaw', vrep.simx_opmode_blocking)
+errCode,LaserPitchHandle = vrep.simxGetObjectHandle(clientID, 'LaserPitch', vrep.simx_opmode_blocking)
+errCode,LaserYawHandle = vrep.simxGetObjectHandle(clientID, 'LaserYaw', vrep.simx_opmode_blocking)
 errCode, prevPitchAng = vrep.simxGetJointPosition(clientID, LaserPitchHandle, vrep.simx_opmode_streaming)
 errCode, prevYawAng = vrep.simxGetJointPosition(clientID, LaserYawHandle, vrep.simx_opmode_streaming)
-errorCodePitch2 = vrep.simxSetJointPosition(clientID, LaserPitchHandle, 0, vrep.simx_opmode_oneshot)
-errorCodeYaw2 = vrep.simxSetJointPosition(clientID, LaserYawHandle, 0, vrep.simx_opmode_oneshot)
+errCode = vrep.simxSetJointPosition(clientID, LaserPitchHandle, 0, vrep.simx_opmode_oneshot)
+errCode = vrep.simxSetJointPosition(clientID, LaserYawHandle, 0, vrep.simx_opmode_oneshot)
 
 #Get vision handle, call it cam1, then set up image sub, then stream image 
-errrorCode,Cam1Handle = vrep.simxGetObjectHandle(clientID,'Cam1', vrep.simx_opmode_blocking)
-err_code,resolution,image = vrep.simxGetVisionSensorImage(clientID,Cam1Handle,0,vrep.simx_opmode_streaming)
+errCode,Cam1Handle = vrep.simxGetObjectHandle(clientID,'Cam1', vrep.simx_opmode_blocking)
+errCode,resolution,image = vrep.simxGetVisionSensorImage(clientID,Cam1Handle,0,vrep.simx_opmode_streaming)
 
 #Wait for response from camera
 image = [0]
@@ -41,81 +42,121 @@ while sum(image) == 0:
     errorCodeImage,resolution,image = vrep.simxGetVisionSensorImage(clientID,Cam1Handle,0,vrep.simx_opmode_buffer)
     #Keep stepping through time until image is recieved
     vrep.simxSynchronousTrigger(clientID)
-#Initialise errors above tolerance, Time and  
+
+#Initialise parameters for the main loop
 startTime = time.time()
-img_processed = 0
+stpCnt = 0
 error_pixel_tol = 2
-x_err = 15
-y_err = 15
-current_target = 0
+x_err = 4
+y_err = 4
+x_err_old = 3
+y_err_old = 3
+currentID = 0
 nextTarget = True
+isFirstTarget = True
 aphidList = []      #List containing aphid objects
 aphidList.append(aphid(255,255,0,0,0))
-#Set initial laser pos
-laserSpotPos = [255, 255]
-## SET GAINS HERE: ##
-Kp_Pitch = 0.0004     #set proportional gain pitch
-Kp_Yaw = 0.0004     #set proportional gain yaw
-Ki_Pitch = 0.0002
-Ki_Yaw = 0.0002
 x_err_cum = 0
 y_err_cum = 0
-timestep = 50e-3
-errOUT = [[0,0,0,0,0,0]]
-########     Visual Servoing Code Begins   ##########
+timestep = 50e-3    #length of timestep in second
+errOUT = [[0,0,0,0,0,0]]    #for exporting to CSV for matlab analysis
+laserSpotPos = [255, 255]
+wheelVel10 = 0  #for filename
+dist = '60'
+wheelVel = float(wheelVel10)/10 #Wheel velocity in radians per second
+maxAng = math.radians(22)
+minAng = -(math.radians(13.5))
+offset = '50'
+#####################
+## SET GAINS HERE: ##
+######################
+Kp = 145
+Ki = 0
+Kd = 0
+Kp_Pitch = Kp/1e5   #set proportional gain pitch
+Kp_Yaw = Kp/1e5     #set proportional gain yaw
+Ki_Pitch = (wheelVel10/4)*(Ki/1e4)   #set intergral gain pitch
+Ki_Yaw = Ki/1e4     #set integral gain yaw
+Kd_Pitch = Kd/1e6   #set derivative gain pitch
+Kd_Yaw = Kd/1e6     #set derivative gain yaw
+
+#For writing the csv file:
+writeResult = True
+filenameCSV = 'Kp' + str(Kp) + 'Ki' + str(Ki) + 'Kd' + str(Kd) + 'V' + str(wheelVel10) + 'D' + dist + 'of' + offset + '.csv'
+
+
+#####################################################
+########     Visual Servoing Loop Begins Here   #####
+#####################################################
 while True:
 
-    
+    #increase step count
+    stpCnt += 1
+
     ###Retrieve Image:
-    errorCodeImage,resolution,image = vrep.simxGetVisionSensorImage(clientID,Cam1Handle,0,vrep.simx_opmode_buffer)
+    errCodeImage,resolution,image = vrep.simxGetVisionSensorImage(clientID,Cam1Handle,0,vrep.simx_opmode_buffer)
         
     # Process image in RBG array
-    img_processed += 1      #increase image count 1
     img = np.array(image, dtype = np.uint8)     #convert V-REP output to numpy format
     img.resize([resolution[0],resolution[1],3]) #Resize image into pixel resolution by 3 deep for RGB
-
+  
     ##mainLoopStart = time.time()   #TO TIME LOGIC LOOP UNCOMMENT THIS LINE AND PRINT LINE AT END
     
     #Process image to find aphid and laser spot locations
-    aphidList = fio.findBlueAphidsCont(img, aphidList)    #Find Location of the aphids in the image      
+    aphidList, isShorter = fio.findBlueAphidsCont(img, aphidList)    #Find Location of the aphids in the image      
     x, y, isFound = fio.findLaserSpotNoLine(img=img, old_position = laserSpotPos)  #Find laser spot location
     laserSpotPos = [x,y]
     
-    # Determine which target is current (idx)
-    if nextTarget == True:
-        idx = fio.findNextTargetIdx(aphidList, laserSpotPos)    #Get index of next target
-        nextTarget = False
-        
+    #if list has been altered due to lost aphid need to find new index location of the aphid
+    if isShorter == True:
+        for i, target in enumerate(aphidList):
+            if target.ID == currentID:
+                idx = i
+                break
+    
+    #Find first tarrget or if 0th aphid keep looking for new targets
+    if isFirstTarget == True or aphidList[idx].ID == 0:
+        x_err_cum = 0
+        y_err_cum = 0
+        idx = fio.findNextTargetIdx(aphidList, laserSpotPos)
+        isFirstTarget == False
 
     #Calculate X and Y laser spot pixel position errors and cumulative errror
     x_err = (laserSpotPos[0] - aphidList[idx].currentX)   #Error in x direction
-    y_err = (laserSpotPos[1] - aphidList[idx].currentY)   #Error in y direction    
-    #Integral of the error signals
+    y_err = (laserSpotPos[1] - aphidList[idx].currentY)   #Error in y direction
+
+    #Integral of the error signals and the derivitive
     x_err_cum += x_err*timestep
     y_err_cum += y_err*timestep
+    x_err_der = (x_err - x_err_old) / timestep
+    y_err_der = (y_err - y_err_old) / timestep
 
-    errOUT.append([x_err, y_err, x, y,aphidList[idx].currentX,aphidList[idx].currentY])
-    # with open('Kp0004Ki002.csv', 'w') as csvFile:
-    #     writer = csv.writer(csvFile)
-    #     writer.writerows(errOUT)
-
+    errOUT.append([x_err, y_err, x, y, aphidList[idx].currentX, aphidList[idx].currentY])
+    if writeResult == True:
+        with open(filenameCSV, 'w') as csvFile:
+            writer = csv.writer(csvFile)
+            writer.writerows(errOUT)
 
     #set tolerances in the position errors
     x_tol = aphidList[idx].width 
     y_tol = aphidList[idx].height 
 
-    #Print errors
-    #print('ErrorX = ' + str(x_err) + ' ErrorY = ' + str(y_err) + ' Allowable = ' + str(x_tol) + ' ' + str(y_tol))
-
     #If error is less than aphid size then move to next target
-    if abs(x_err) <= 1 and abs(y_err) <= 1 and idx != 0:
-        current_target += 1
+    if abs(x_err) <= x_tol and abs(y_err) <= y_tol:
         aphidList[idx].targetHit()
-        nextTarget = True
+        idx = fio.findNextTargetIdx(aphidList, laserSpotPos)    #Get index of next target
+        currentID = aphidList[idx].ID
         x_err_cum = 0
         y_err_cum = 0
-        #print('Number destroyed ' + str(current_target) + ' from ' + str(len(aphidList)))
-
+        x_err_der = 0
+        y_err_der = 0
+        stepCnt = 0
+        #Reset errors based on new target
+        x_err = (laserSpotPos[0] - aphidList[idx].currentX)   #Error in x direction
+        y_err = (laserSpotPos[1] - aphidList[idx].currentY)   #Error in y direction
+        #Print New Error   
+        errOUT.append([x_err, y_err, x, y, aphidList[idx].currentX, aphidList[idx].currentY]) 
+        print(stpCnt)
 
     #Rotate laser proportional to error, but account for velocity of aphid:
     
@@ -124,15 +165,33 @@ while True:
     errCode, prevYawAng = vrep.simxGetJointPosition(clientID, LaserYawHandle, vrep.simx_opmode_buffer)
     
     #calculate new joint angles
-    demandPitchAng = float(prevPitchAng) - (float(y_err)*Kp_Pitch) - (float(y_err_cum)*Ki_Pitch)
-    demandYawAng = float(prevYawAng) + (float(x_err)*Kp_Yaw) + (float(x_err_cum)*Ki_Yaw)
+    demandPitchAng = float(prevPitchAng) - (float(y_err)*Kp_Pitch) - (float(y_err_cum)*Ki_Pitch) - (float(y_err_der)*Kd_Pitch)
+    demandYawAng = float(prevYawAng) + (float(x_err)*Kp_Yaw) + (float(x_err_cum)*Ki_Yaw) + (float(x_err_der)*Kd_Yaw)
     
-    #set new joint angles
+    # Do not let angle exceed limits
+    if demandPitchAng > (math.radians(19)):
+        demandPitchAng = math.radians(19)
+    if demandYawAng > maxAng:
+        demandYawAng = maxAng
+    if demandPitchAng < -(math.radians(17)):
+        demandPitchAng = -(math.radians(17))
+    if demandYawAng < minAng:
+        demandYawAng = minAng 
+    #progress timestep in error
+    x_err_old = x_err
+    y_err_old = y_err
 
-    errorCodePitch2 = vrep.simxSetJointPosition(clientID, LaserPitchHandle, demandPitchAng, vrep.simx_opmode_oneshot)
-    errorCodeYaw2 = vrep.simxSetJointPosition(clientID, LaserYawHandle, demandYawAng, vrep.simx_opmode_oneshot)
-    
+    #set new joint angles
+    errCode = vrep.simxSetJointPosition(clientID, LaserPitchHandle, demandPitchAng, vrep.simx_opmode_oneshot)
+    errCode = vrep.simxSetJointPosition(clientID, LaserYawHandle, demandYawAng, vrep.simx_opmode_oneshot)
+    #set platform velocity
+    vrep.simxSetFloatSignal(clientID, 'wheelPos', wheelVel, vrep.simx_opmode_oneshot)
     #print("Loop takes " + str(mainLoopStart - time.time()) + " seconds.")  #UNCOMMENT THIS LINE TO TIME LOOP
+    #Have to signal syncronous trigger three times so that camera buffer updates
+    vrep.simxSynchronousTrigger(clientID)
+    vrep.simxSetFloatSignal(clientID, 'wheelPos', 0, vrep.simx_opmode_oneshot)
+    vrep.simxSynchronousTrigger(clientID)
+    vrep.simxSetFloatSignal(clientID, 'wheelPos', 0, vrep.simx_opmode_oneshot)
     vrep.simxSynchronousTrigger(clientID)
 
 vrep.simxFinish(clientID) #close connetion
