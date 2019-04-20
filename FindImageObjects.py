@@ -502,7 +502,6 @@ def findLaserSpotHSV(img): #Find the end of the 'Laser line' which VREP uses to 
 # Does not need the "checkNeighb" function as a result (should improve speed)
 def findBlueAphidsCont(img, aphidList):    
 
-    #ScanStart = time.time() # start timer
     # Convert image to HSV and filter to find aphids
     imHSV = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)   # !! Could do have this as function input instead
     # Set HSV filter values
@@ -512,14 +511,17 @@ def findBlueAphidsCont(img, aphidList):
     maskHSV = cv2.inRange(imHSV, lower_blue, upper_blue)
     # Find contours around each aphid in the mask
     _,contours,_ = cv2.findContours(maskHSV, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    
+    print('Number of aphids detected = ' + str(len(contours)))
+    #Initiate list of IDs of found aphid objects
+    aphids_found = []
     # Get postion and size of bounding boxes for each aphid and append
     # check if centroid falls within estimated rectangle of existing aphid
     for cnt in contours:
 
         x,y,width,height = cv2.boundingRect(cnt) # get width and height
-        cx = math.ceil(x + (width/2))
-        cy = math.ceil(y + (height/2))
+        cv2.rectangle(img,(x,y),(x+height,y+width),(0,255,0),1)
+        cx = math.ceil(x + (width/2))       #is this definitely + ? and not -?
+        cy = math.ceil(y + (height/2))      #is this definitely + ? and not -?
         
         #Assume it is a new target intitally
         newTarget = True
@@ -527,9 +529,11 @@ def findBlueAphidsCont(img, aphidList):
         for target in aphidList:
             #Get corners of aphids estimated bounding box [xmin, xmax, ymin, ymax]
             endPts = target.estimateNewPos()
+            cv2.rectangle(img,(int(endPts[0]),int(endPts[2])),(int(endPts[1]),int(endPts[3])),(0,0,255),1)
             #Check if centroid is within an existing aphids estimated bounding box
             if (endPts[0] <= cx <= endPts[1]) and (endPts[2] <= cy <= endPts[3]):
                 target.updatePos(cx, cy, width, height)
+                aphids_found.append(target.ID)
                 newTarget = False                
                 break
 
@@ -537,11 +541,29 @@ def findBlueAphidsCont(img, aphidList):
         if newTarget == True:
             ref = aphidList[-1].ID + 1
             newAphid = aphid(cx, cy, width, height, ref)
+            cv2.rectangle(img,(x,y),(x+height,y+width),(0,0,0),1)
             aphidList.append(newAphid)
-    #print time taken and number of aphids found
-    #print('Aphid Pixel scan took ' + str(time.time() - ScanStart) + 'seconds.')
+            aphids_found.append(newAphid.ID)
+            print('Last aphid ID = ' + str(ref))
 
-    return aphidList
+
+    #Check which aphids haven't been found if any:
+    targetMIA = False
+    for target in aphidList:
+        if target.ID in aphids_found:
+            target.changeNotFoundCount(0)
+        else:
+            target.changeNotFoundCount(1)
+            targetMIA = True
+
+    # If aphid not found then clear the aphid from the list
+    if targetMIA == True:
+        aphidList = clearMissingAphids(aphidList)
+        
+    cv2.imshow('Tracking Rectangles', img)
+    cv2.waitKey(0)
+
+    return aphidList, targetMIA
 
 
 #######################################################
@@ -554,10 +576,12 @@ def findNextTargetIdx(aphidList, laserSpot):
     aphidCount = len(aphidList)
     dist2laser = np.zeros(aphidCount)
 
-    for idx in range(1,aphidCount):
-        dist2laser[0] = 1e4
-        if aphidList[idx].active:
-            dist2laser[idx] = np.sqrt((aphidList[idx].currentX - laserSpot[0])**2 + (aphidList[idx].currentY - laserSpot[1])**2)
+    for idx, target in enumerate(aphidList):
+        
+        if target.ID == 0:
+            dist2laser[idx] = 1e4   #ensures center pixel targeted if no aphids remaining active
+        elif target.active == True:
+            dist2laser[idx] = np.sqrt((target.currentX - laserSpot[0])**2 + (target.currentY - laserSpot[1])**2)
         else:
             dist2laser[idx] = 1e5
     
@@ -570,34 +594,69 @@ def findNextTargetIdx(aphidList, laserSpot):
 #  Finds a laser spot in the virtual env where the laser ray
 #  is not visible.
 
-def findLaserSpotNoLine(img, old_position, lower_blue = np.array([0,100,0]), upper_blue = np.array([30,255,255])):    
+def findLaserSpotNoLine(img, old_position, lower_blue = np.array([0, 190, 170]), upper_blue = np.array([50,255,255])):    
 
     #ScanStart = time.time() # start timer
     isFound = False
 
-    #Convret colorspace to HSV
+    #Convret colorspace to HSV (notice converting from BGR not RGB)
     imHSV = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
-
     # Filter image to get mask of aphid pixel locations
     maskHSV = cv2.inRange(imHSV, lower_blue, upper_blue)
     # Find contours of potential laser spots
     _,contours,_ = cv2.findContours(maskHSV, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     
-    # Create empty array of candidate laser spot postions
-    #potLocs = np.array([0,0,0,0])
-    
     for cnt in contours:
-        #print("cnt found")
         x, y, width, height = cv2.boundingRect(cnt) # get width and height
-        #area = width*height #calculate bounding rectangle area
-        #AR = height/width   #calculate aspect ratio
+        #cv2.rectangle(img,(x-3,y-3),(x+width+3,y+height+3),(0,0,255),1)
         isFound = True
-            
-
+    
+    #cv2.imshow('Rect', img)
+    #cv2.waitKey(0)
     if isFound == False:
         x = old_position[0]
         y = old_position[1]
     
-        
-    #print(str(x) + ' ' + str(y))
+
     return x, y, isFound
+
+
+##################################################################
+#   This function clears aphids that have not been found
+#   for at least 3 frames from the aphidList
+
+def clearMissingAphids(aphidList):
+
+    #Make a copy of the list
+    aphidListCopy = aphidList[:]
+    # If any Missing aphids in list remove them
+    for target in aphidList:
+        if target.MIA == True:
+            aphidListCopy.remove(target)
+    
+    return aphidListCopy
+
+
+#--------------------------------------------------------------------------
+#   This is an adapred version of findNextTargetIdx to prevent targeting
+#   targets which beyond saturation point for the laser (500+ Y pixels)
+#---------------------------------------------------------------------------
+def findNextTargetIdxSat(aphidList, laserSpot):
+
+    aphidCount = len(aphidList)
+    dist2laser = np.zeros(aphidCount)
+
+    for idx, target in enumerate(aphidList):
+        
+        if target.ID == 0:
+            dist2laser[idx] = 1e5   #ensures center pixel targeted if no aphids remaining active
+        elif (target.currentY > 490 or target.currentY < 20) and target.active == True:
+            dist2laser[idx] = 1e4   #ensures targets which are beyond laser spot limits are last selected active targets
+        elif target.active == True:
+            dist2laser[idx] = np.sqrt((target.currentX - laserSpot[0])**2 + (target.currentY - laserSpot[1])**2)
+        else:
+            dist2laser[idx] = 1e6   #ensures inactive targets are not selected
+    
+    nxtIdx = np.argmin(dist2laser)
+
+    return nxtIdx
