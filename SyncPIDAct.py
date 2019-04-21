@@ -67,22 +67,22 @@ timestep = 50e-3    #length of timestep in second
 errOUT = [[0,0,0,0,0,0,0]]    #for exporting to CSV for matlab analysis
 laserSpotPos = [255, 255]
 sysPos = 0  #set system position to zero
-sysVel100 = 40  #for filename, fwd velocity in centimetres per second
+sysVel100 = 20 #for filename, fwd velocity in centimetres per second
 dist = 'floor'
 sysVel = float(sysVel100)/100 #Actuator velocity in metres per second
 maxAng = math.radians(22.5)
 minAng = -(math.radians(13.5))
 offset = '50'
-#####################
-## SET GAINS HERE: ##
-######################
+#--------------------------------------------------#
+##              SET GAINS HERE:                   ##
+#--------------------------------------------------#
 Kp = 14
-Ki = 0
+Ki = 300
 Kd = 0
 Kp_Pitch = Kp/1e4   #set proportional gain pitch
 Kp_Yaw = Kp/1e4     #set proportional gain yaw
-Ki_Pitch = 0 #(wheelVel10/4)*(Ki/1e4)   #set intergral gain pitch
-Ki_Yaw = Ki/1e4     #set integral gain yaw
+Ki_Pitch =  Ki/1e4  #set intergral gain pitch
+Ki_Yaw = 0.0076     #set integral gain yaw
 Kd_Pitch = Kd/1e6   #set derivative gain pitch
 Kd_Yaw = Kd/1e6     #set derivative gain yaw
 
@@ -92,7 +92,7 @@ filenameCSV = 'Kp' + str(Kp) + 'Ki' + str(Ki) + 'Kd' + str(Kd) + 'V' + str(sysVe
 
 
 #---------------------------------------------------#
-#           Visual Servoing Loop Begins Here:        #
+#           Visual Servoing Loop Begins Here:       #
 #---------------------------------------------------#
 while True:
 
@@ -195,7 +195,7 @@ while True:
     x_err_old = x_err
     y_err_old = y_err
 
-    #Calculate new system postion
+    #Calculate new system postion according to assigned speed
     sysPos = sysPos + timestep*sysVel
     #set new joint angles
     errCode = vrep.simxSetJointPosition(clientID, LaserPitchHandle, demandPitchAng, vrep.simx_opmode_oneshot)

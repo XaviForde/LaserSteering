@@ -509,9 +509,8 @@ def findBlueAphidsCont(img, aphidList):
     upper_blue = np.array([160, 255, 255])
     # Filter image to get mask of aphid pixel locations
     maskHSV = cv2.inRange(imHSV, lower_blue, upper_blue)
-    # Find contours around each aphid in the mask
+    # Find contours around each aphid detected in the mask
     _,contours,_ = cv2.findContours(maskHSV, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    print('Number of aphids detected = ' + str(len(contours)))
     #Initiate list of IDs of found aphid objects
     aphids_found = []
     # Get postion and size of bounding boxes for each aphid and append
@@ -530,14 +529,21 @@ def findBlueAphidsCont(img, aphidList):
             #Get corners of aphids estimated bounding box [xmin, xmax, ymin, ymax]
             endPts = target.estimateNewPos()
             cv2.rectangle(img,(int(endPts[0]),int(endPts[2])),(int(endPts[1]),int(endPts[3])),(0,0,255),1)
-            #Check if centroid is within an existing aphids estimated bounding box
+            #In case detected aphid is within estimated box of multiple existing targets the target with
+            # the closest estimated center should be chosen. Therefore empty array storing these distances
+            #   is created:
+            distList = []
+            potTargetList = []  #potential targets this contour could belong to
+            #Check if centroid is within an existing targets estimated bounding box
             if (endPts[0] <= cx <= endPts[1]) and (endPts[2] <= cy <= endPts[3]):
-                target.updatePos(cx, cy, width, height)
-                aphids_found.append(target.ID)
-                newTarget = False                
+                #calculate distance from estimated center of target to detected aphid
+                dist = np.sqrt((target.estX - cx)**2 + (target.estY - cy)**2)  #distance of taget to countour
+                distList.append(dist)
+                potTargetList.append(target)
+                newTarget = False        #contour belongs to existing target        
                 break
 
-        # If not in region of existing aphid create new aphid:
+        # If contour not in region of existing aphid create new aphid:
         if newTarget == True:
             ref = aphidList[-1].ID + 1
             newAphid = aphid(cx, cy, width, height, ref)
@@ -545,7 +551,12 @@ def findBlueAphidsCont(img, aphidList):
             aphidList.append(newAphid)
             aphids_found.append(newAphid.ID)
             print('Last aphid ID = ' + str(ref))
-
+        
+        else:
+            idxClosest = np.argmin(distList)    #index of clostest target in the list
+            closestTarget = potTargetList[idxClosest]   #retrieves the closest target
+            closestTarget.updatePos(cx, cy, width, height)  #update target
+            aphids_found.append(closestTarget.ID)   #add target to list of targets that have been updated
 
     #Check which aphids haven't been found if any:
     targetMIA = False
@@ -560,8 +571,8 @@ def findBlueAphidsCont(img, aphidList):
     if targetMIA == True:
         aphidList = clearMissingAphids(aphidList)
         
-    cv2.imshow('Tracking Rectangles', img)
-    cv2.waitKey(0)
+    #cv2.imshow('Tracking Rectangles', img)
+    #cv2.waitKey(0)
 
     return aphidList, targetMIA
 

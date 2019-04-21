@@ -71,7 +71,7 @@ class aphid(object):
 
             xmin = self.estX - boxHalfWidth #+ math.ceil(self.velX)
             xmax = self.estX + boxHalfWidth #+ math.ceil(self.velX)
-            ymin = self.estY - boxHalfHeight - 4 + math.ceil(self.velY/2)
+            ymin = self.estY - boxHalfHeight - 4 + math.ceil(self.velY/3)
             ymax = self.estY + boxHalfHeight
 
             estRect = [xmin, xmax, ymin, ymax]
