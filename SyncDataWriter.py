@@ -4,7 +4,7 @@ import csv
 import numpy as np
 import time
 import sys
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import FindImageObjects as fio
 from tempTargetClass import aphid
 
@@ -54,16 +54,16 @@ aphidList.append(aphid(255,255,0,0,0))
 #Set initial laser pos
 laserSpotPos = [255, 255]
 ## SET GAINS HERE: ##
-K_Pitch = 0.0002     #set proportional gain pitch
-K_Yaw = 0.0002       #set proportional gain yaw
+K_Pitch = 0.0014     #set proportional gain pitch
+K_Yaw = 0.0014       #set proportional gain yaw
 
 errOUT = [[0,0,0,0,0,0]]
 
-
+stpCnt = 0
 ########     Visual Servoing Code Begins   ##########
 while True:
 
-    
+    stpCnt +=1
     ###Retrieve Image:
     errorCodeImage,resolution,image = vrep.simxGetVisionSensorImage(clientID,Cam1Handle,0,vrep.simx_opmode_buffer)
         
@@ -75,7 +75,7 @@ while True:
     ##mainLoopStart = time.time()   #TO TIME LOGIC LOOP UNCOMMENT THIS LINE AND PRINT LINE AT END
     
     #Process image to find aphid and laser spot locations
-    aphidList = fio.findBlueAphidsCont(img, aphidList)    #Find Location of the aphids in the image      
+    aphidList = fio.findBlueAphidsCont(img, aphidList, stpCnt)    #Find Location of the aphids in the image      
     print('Number of aphids: ' + str(len(aphidList)))
     x, y, isFound = fio.findLaserSpotNoLine(img=img, old_position = laserSpotPos)  #Find laser spot location
     laserSpotPos = [x,y]
